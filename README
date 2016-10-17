@@ -3,3 +3,5 @@ types of RNNs. Currently there is support for two types of simple statistical
 model - adaptive and static. Static must be supplied during decompression 
 phase. It is quite slow. 
 
+Implementation is based on http://marknelson.us/2014/10/19/data-compression-with-arithmetic-coding/
+and c++ source http://marknelson.us/attachments/2014/ari/ari.zip .
