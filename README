@@ -1,2 +1,5 @@
 Fun exercise - re-implementing arithmetic coding - in order to try different
-types of RNNs. Final goal hutter prize.
+types of RNNs. Currently there is support for two types of simple statistical
+model - adaptive and static. Static must be supplied during decompression 
+phase. It is quite slow. 
+

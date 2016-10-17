@@ -9,8 +9,10 @@ __author__ = 'Tomas Novacik'
 
 import argparse
 
+import models
+
 from arithmetic_coder import ArithmeticCoder
-from models import SimpleModel
+
 
 COMPRESSION = "compression"
 DECOMPRESSION = "decompression"
@@ -40,10 +42,12 @@ def main():
     with open(args.input_file) as ifile:
         input_data = ifile.read()
         if args.input_model:
-            model = SimpleModel()
-            model.load_from_file(args.model)
+            model = models.SimpleModel()
+            model.load_from_file(args.input_model)
+        elif args.output_model:
+            model = models.SimpleModel(input_data)
         else:
-            model = SimpleModel(input_data)
+            model = models.AdaptiveModel()
 
         ac = ArithmeticCoder(model)
         if args.action == COMPRESSION:

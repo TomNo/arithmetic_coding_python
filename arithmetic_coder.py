@@ -9,11 +9,12 @@ class ArithmeticCoder(object):
 
     def __init__(self, model):
         self.model = model
-        self._init()
 
-    def _init(self):
-        self.output = bitarray()
+    def _init(self, output_type=bitarray):
+        self.output = output_type()
         self.pending_bits = 0
+        self.high = self.model.MAX_VAL
+        self.low = self.model.MIN_VAL
 
     def _add_output_bits(self, bit):
         self.output.append(bit)
@@ -21,93 +22,94 @@ class ArithmeticCoder(object):
             self.output.append(not bit)
         self.pending_bits = 0
 
-    def encode(self, data):
-        high = self.model.MAX_VAL
-        low = self.model.MIN_VAL
+    def _compress(self, input):
+        symbol = self.model.get_interval(input)
+        range = self.high - self.low + 1
+        self.high = self.low + (range * symbol.high / symbol.count) - 1
+        self.low = self.low + (range * symbol.low / symbol.count)
 
+        while True:
+            if self.high < self.model.ONE_HALF:
+                self._add_output_bits(0)
+            elif self.low >= self.model.ONE_HALF:
+                self._add_output_bits(1)
+            elif self.low >= self.model.ONE_FOURTH and\
+                            self.high < self.model.THREE_FOURTHS:
+                self.pending_bits += 1
+                self.low -= self.model.ONE_FOURTH
+                self.high -= self.model.ONE_FOURTH
+            else:
+              break
+
+            self.high <<= 1
+            self.high += 1
+            self.low <<= 1
+            self.high &= self.model.MAX_VAL
+            self.low &= self.model.MAX_VAL
+
+    def encode(self, data):
         self._init()
 
         for i in data:
-            symbol = self.model.get_interval(i)
-            range = high - low + 1
-            high = low + (range * symbol.high / symbol.count) - 1
-            low = low + (range * symbol.low / symbol.count)
+            self._compress(i)
 
-            while True:
-                if high < self.model.ONE_HALF:
-                    self._add_output_bits(0)
-                elif low >= self.model.ONE_HALF:
-                    self._add_output_bits(1)
-                elif low >= self.model.ONE_FOURTH and\
-                                high < self.model.THREE_FOURTHS:
-                    self.pending_bits += 1
-                    low -= self.model.ONE_FOURTH
-                    high -= self.model.ONE_FOURTH
-                else:
-                  break
+        # adding stop
+        self._compress(self.model.EOF)
 
-                high <<= 1
-                high += 1
-                low <<= 1
-                high &= self.model.MAX_VAL
-                low &= self.model.MAX_VAL
-
-                if ( low < self.model.ONE_FOURTH ):
-                    self._add_output_bits(0)
-                else:
-                    self._add_output_bits(1)
-
+        if ( self.low < self.model.ONE_FOURTH ):
+            self._add_output_bits(0)
+        else:
+            self._add_output_bits(1)
         return self.output.tobytes()
 
     def decode(self, data):
-        high = self.model.MAX_VAL
-        low = self.model.MIN_VAL
-
+        input_bits = bitarray()
+        input_bits.frombytes(data)
+        input_bits.extend("1" * self.model.CODE_VALUE_BITS)
         value = 0
-        start_index = min(self.model.CODE_VALUE_BITS, len(data))
 
-        self._init()
+        start_index = min(self.model.CODE_VALUE_BITS, len(input_bits))
+
+        self._init(list)
 
         for i in xrange(start_index):
             value <<= 1
-            value += 0 if data[i] == '0' else 1
+            value += input_bits[i]
 
         index = start_index
 
-        while index < len(data):
-            range = high - low + 1
-            scaled_value =  ((value - low + 1) * self.model.get_count() - 1 )
-            scaled_value /= range
-            symbol = self.model.get_symbol(scaled_value)
+        while index < len(input_bits):
+            range = self.high - self.low + 1
+            s_value =  ((value - self.low + 1) * self.model.get_count() - 1)
+            s_value /= range
+            symbol = self.model.get_symbol(s_value)
 
-            if symbol.value == 256:
+            if symbol.value == self.model.EOF:
                 break
             self.output.append(symbol.value)
+            self.high = self.low + (range*symbol.high)/symbol.count - 1
+            self.low = self.low + (range*symbol.low)/symbol.count
+            while True:
+                if self.high < self.model.ONE_HALF:
+                    pass
+                elif self.low >= self.model.ONE_HALF:
+                  value -= self.model.ONE_HALF
+                  self.low -= self.model.ONE_HALF
+                  self.high -= self.model.ONE_HALF
+                elif self.low >= self.model.ONE_FOURTH and\
+                                self.high < self.model.THREE_FOURTHS:
+                  value -= self.model.ONE_FOURTH
+                  self.low -= self.model.ONE_FOURTH
+                  self.high -= self.model.ONE_FOURTH
+                else:
+                  break
+                self.low <<= 1
+                self.high <<= 1
+                self.high += 1
+                value <<= 1
+                value += input_bits[index]
+                index += 1
 
-            high = low + (range*symbol.high)/symbol.count - 1
-            low = low + (range*symbol.low)/symbol.count
-
-        while True:
-            if high < self.model.ONE_HALF:
-                pass
-            elif low >= self.model.ONE_HALF:
-              value -= self.model.ONE_HALF
-              low -= self.model.ONE_HALF
-              high -= self.model.ONE_HALF
-            elif low >= self.model.ONE_FOURTH and\
-                            high < self.model.THREE_FOURTHS:
-              value -= self.model.ONE_FOURTH
-              low -= self.model.ONE_FOURTH
-              high -= self.model.ONE_FOURTH
-            else:
-              break
-            low <<= 1
-            high <<= 1
-            high += 1
-            value <<= 1
-            value += 1 if data[index] == '1' else 0
-            index += 1
-
-        return self.output.tobytes()
+        return "".join(map(chr, self.output))
 
 # eof
